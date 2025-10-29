@@ -6,11 +6,12 @@ import random
 import json
 import asyncio
 from datetime import datetime, timedelta
-import requests # <-- ADDED REQUESTS LIBRARY
+import requests
 
 # --- 1. Configuration: School Branding, Emission Factors, and Data Schema ---
 
-APP_TITLE = "HRMS Eco-Score: CarbonCollective – Green Growth for Viksit Bharat 2047"
+# UPDATED: Added an icon to the title string
+APP_TITLE = "🌳 HRMS Eco-Score: CarbonCollective – Green Growth for Viksit Bharat 2047"
 ORG_NAME = "Hansraj Model School"
 
 # Check for API Key securely using st.secrets
@@ -201,12 +202,12 @@ def render_informative_panel():
     st.markdown(
         """
         <div style="padding: 15px; border-radius: 10px; background-color: #0E1117; border-left: 5px solid #00B377;">
-            <h3 style="color: #00B377; margin-top: 0px;">What are Carbon Credits?</h3>
+            <h3 style="color: #00B377; margin-top: 0px;">💡 What are Carbon Credits?</h3>
             <p style="font-size: 14px;">
             In this app, <b>1 Carbon Credit = 1 kg of CO₂e Saved</b> (Carbon Dioxide equivalent). 
             Every sustainable action you log helps our school reduce its environmental footprint.
             </p>
-            <h3 style="color: #00B377;">Viksit Bharat 2047 Alignment</h3>
+            <h3 style="color: #00B377;">🇮🇳 Viksit Bharat 2047 Alignment</h3>
             <p style="font-size: 14px; margin-bottom: 0px;">
             This project aligns with the 'Green Growth' theme by promoting <b>Digital Empowerment</b> 
             and <b>Community Development</b> through transparent, data-driven sustainability tracking.
@@ -217,7 +218,8 @@ def render_informative_panel():
 
 def render_emission_factors_table():
     """Renders a collapsible table showing the conversion factors."""
-    with st.expander("🔬 View Carbon Credit Conversion Factors"):
+    # UPDATED: Changed emoji to a gear for a more technical/factor feel
+    with st.expander("⚙️ View Carbon Credit Conversion Factors"):
         factors_data = [
             (activity, f"{data['factor']:,.3f}", data['unit'])
             for activity, data in EMISSION_FACTORS.items()
@@ -227,7 +229,8 @@ def render_emission_factors_table():
 
 def render_sidebar_form():
     """Renders the data entry form in the sidebar."""
-    st.sidebar.header("Log Your Green Action 🚀")
+    # UPDATED: Added icon to header
+    st.sidebar.header("Log Your Green Action 📝") 
     
     # Use a key to manage the form state for dynamic updates
     form_key = "log_contribution_form"
@@ -237,10 +240,6 @@ def render_sidebar_form():
         role = st.selectbox("Your Role / Department", options=USER_ROLES)
         
         # --- Dynamic Unit Logic ---
-        # Get the currently selected activity (must be outside the form if using form_submit_button)
-        # Using a fixed value from the form for simplicity here, but a separate st.selectbox 
-        # outside the form is often better for dynamic labels if not using session_state tricks
-        
         activity = st.selectbox(
             "Select Activity", 
             options=list(EMISSION_FACTORS.keys()), 
@@ -253,6 +252,7 @@ def render_sidebar_form():
         # Quantity input using the dynamic unit
         quantity = st.number_input(f"Quantity ({current_unit})", min_value=0.01, value=1.00, step=0.01)
         
+        # UPDATED: Kept original emoji
         submitted = st.form_submit_button("Log Contribution ✨")
 
         if submitted:
@@ -281,6 +281,7 @@ def render_sidebar_form():
                 st.success(f"Logged {quantity:,.2f} {current_unit} of {activity}. Generated {credits:,.2f} Credits!")
     
     st.sidebar.markdown("---")
+    # UPDATED: Kept original emoji
     st.sidebar.button("♻️ Reset All Data", on_click=reset_data_callback, help="Wipes out all logged contributions and resets to mock data.")
 
 def render_main_dashboard():
@@ -305,26 +306,30 @@ def render_main_dashboard():
         top_credits = 0
         top_role = "N/A"
 
-    st.subheader(f"Dashboard: {ORG_NAME}'s Collective Impact 🌳")
+    # UPDATED: Changed emoji to a globe
+    st.subheader(f"Dashboard: {ORG_NAME}'s Collective Impact 🌎")
 
     col1, col2, col3, col4 = st.columns(4)
 
+    # UPDATED: Added emojis to st.metric labels
     with col1:
-        st.metric("Total Credits Generated", f"{total_credits:,.0f} pts", delta_color="normal", help="1 point = 1 kg CO₂e saved.")
+        st.metric("🌿 Total Credits Generated", f"{total_credits:,.0f} pts", delta_color="normal", help="1 point = 1 kg CO₂e saved.")
     with col2:
-        st.metric("Total Actions Logged", f"{total_entries:,}")
+        st.metric("📝 Total Actions Logged", f"{total_entries:,}")
     with col3:
-        st.metric("Top Contributor", top_contributor, delta=f"{top_credits:,.0f} Credits")
+        st.metric("🥇 Top Contributor", top_contributor, delta=f"{top_credits:,.0f} Credits")
     with col4:
-        st.metric("Leading Role", top_role)
+        st.metric("👥 Leading Role", top_role)
     
     st.markdown("---")
 
     # 2. AI Personalized Suggestions
-    st.header("💡 Personalized Eco-Coach Advice")
+    # UPDATED: Added icon to header
+    st.header("🧠 Personalized Eco-Coach Advice")
     
     if API_KEY:
-        if st.button("Generate AI Suggestion"):
+        # UPDATED: Added icon to button
+        if st.button("Generate AI Suggestion 🤖"):
             # Use a random role for the prompt since a logged-in user isn't implemented
             random_role = random.choice(USER_ROLES) 
             
@@ -343,7 +348,8 @@ def render_main_dashboard():
 
 
     st.markdown("---")
-    st.header("📊 Visualization and Analytics")
+    # UPDATED: Added icon to header
+    st.header("📈 Visualization and Analytics")
     
     # 3. Visualizations
     col_a, col_b = st.columns(2)
@@ -423,13 +429,15 @@ def render_main_dashboard():
 
     # 5. Export Functionality
     st.markdown("---")
+    # UPDATED: Added icon to subheader
     st.subheader("⬇️ Report Generation")
     
     if total_entries > 0:
         # Create a CSV export button
         csv_export = df.to_csv(index=False).encode('utf-8')
         st.download_button(
-            label="Download Full Contribution CSV",
+            # UPDATED: Added icon to button label
+            label="Download Full Contribution CSV 💾",
             data=csv_export,
             file_name=f'{ORG_NAME}_CarbonCollective_Report_{datetime.now().strftime("%Y%m%d")}.csv',
             mime='text/csv',
