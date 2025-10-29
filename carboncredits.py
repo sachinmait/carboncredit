@@ -2,12 +2,12 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import uuid
-import random # Added for data randomization
-# import numpy as np # Not strictly necessary, but helpful for generating data
+from datetime import datetime, timedelta
+import random 
 
 # --- 1. Configuration: School Branding, Emission Factors, and Data Schema ---
 
-APP_TITLE = "HRMS Eco-Score: CarbonCollective – Green Growth for Viksit Bharat 2047"
+APP_TITLE = "🌱 HRMS Eco-Score: CarbonCollective – Green Growth for Viksit Bharat 2047"
 ORG_NAME = "Hansraj Model School"
 
 # Emission Factors (kg CO₂e per unit) - Adapted for School Activities
@@ -17,24 +17,29 @@ EMISSION_FACTORS = {
     "Waste recycled": {"factor": 0.90, "unit": "kg"},
     "Trees planted": {"factor": 21.77, "unit": "count"},
     "Solar power used": {"factor": 0.80, "unit": "kWh"},
-    "Paper Saved": {"factor": 0.005, "unit": "sheets"},  # New factor
-    "Water Saved": {"factor": 0.0003, "unit": "liters"},  # New factor
+    "Paper Saved": {"factor": 0.005, "unit": "sheets"},
+    "Water Saved": {"factor": 0.0003, "unit": "liters"},
 }
 
 USER_ROLES = ["Student", "Faculty/Staff", "Administration", "Eco-Club Lead"]
 
 DATA_COLUMNS = [
-    "Entry ID", "Name", "Role", "Activity", "Quantity", "CO2 Saved (kg)", "Credits"
+    "Entry ID", "Timestamp", "Name", "Role", "Activity", "Quantity", "CO2 Saved (kg)", "Credits"
 ]
 
 # --- 2. Data Initialization and Mock Data Generation ---
 
+# Set to True to start with a populated dashboard for the demo
+GENERATE_MOCK_DATA = True 
+
 def initialize_data():
     """Initializes the main DataFrame in Streamlit's session state."""
-    if 'carbon_ledger' not in st.session_state:
+    if 'carbon_ledger' not in st.session_state or st.session_state['carbon_ledger'].empty:
         st.session_state['carbon_ledger'] = pd.DataFrame(columns=DATA_COLUMNS)
-        st.session_state['carbon_ledger'] = populate_mock_data(st.session_state['carbon_ledger'])
+        if GENERATE_MOCK_DATA:
+            st.session_state['carbon_ledger'] = populate_mock_data(st.session_state['carbon_ledger'])
 
+@st.cache_data
 def populate_mock_data(df):
     """Adds a large, randomized dummy dataset for a robust demo showcase (80 entries)."""
     
@@ -51,7 +56,6 @@ def populate_mock_data(df):
     
     activities = list(EMISSION_FACTORS.keys())
     
-    # Define quantity ranges for realistic-looking randomization
     quantity_ranges = {
         "Electricity saved": (1, 15, 'float'),
         "Walk/Bike Commute": (1, 50, 'float'),
@@ -64,8 +68,9 @@ def populate_mock_data(df):
 
     mock_entries = []
     NUM_ENTRIES = 80
-
-    for _ in range(NUM_ENTRIES):
+    start_date = datetime.now() - timedelta(days=60)
+    
+    for i in range(NUM_ENTRIES):
         name, role = random.choice(names_and_roles)
         activity = random.choice(activities)
         
@@ -74,16 +79,35 @@ def populate_mock_data(df):
         if q_type == 'int':
             quantity = random.randint(min_q, max_q)
         else:
-            # Random float with two decimal places
             quantity = round(random.uniform(min_q, max_q), 2)
             
-        mock_entries.append((name, role, activity, quantity))
-
-    # Add entries to the DataFrame
-    for name, role, activity, quantity in mock_entries:
-        df = add_entry(df, name, role, activity, quantity)
+        # Distribute entries across the last 60 days
+        time_offset = timedelta(days=random.uniform(0, 60), seconds=random.randint(0, 86400))
+        timestamp = start_date + time_offset
+            
+        co2_saved, credits = calculate_credits(activity, quantity)
         
-    return df
+        mock_entries.append({
+            "Entry ID": str(uuid.uuid4()),
+            "Timestamp": timestamp,
+            "Name": name,
+            "Role": role,
+            "Activity": activity,
+            "Quantity": quantity,
+            "CO2 Saved (kg)": co2_saved,
+            "Credits": credits
+        })
+
+    df = pd.DataFrame(mock_entries)
+    
+    # Sort by timestamp to make the cumulative chart realistic
+    return df.sort_values(by="Timestamp").reset_index(drop=True)
+
+def reset_data():
+    """Clears the session state ledger and re-initializes."""
+    del st.session_state['carbon_ledger']
+    initialize_data()
+    st.success("Data reset complete. Starting with fresh ledger.")
 
 # --- 3. Core Calculation Logic ---
 
@@ -102,6 +126,7 @@ def add_entry(df, name, role, activity, quantity):
 
     new_row = pd.DataFrame({
         "Entry ID": [str(uuid.uuid4())],
+        "Timestamp": [datetime.now()], # Capture real-time log
         "Name": [name],
         "Role": [role],
         "Activity": [activity],
@@ -110,16 +135,15 @@ def add_entry(df, name, role, activity, quantity):
         "Credits": [credits]
     })
 
-    # Use pd.concat for adding a new row to a DataFrame
     return pd.concat([df, new_row], ignore_index=True)
 
 # --- 4. Streamlit UI Components ---
 
 def render_sidebar_form():
-    """Renders the data entry form in the sidebar."""
-    st.sidebar.markdown(f"### Log Your Green Action")
+    """Renders the data entry form and reset button in the sidebar."""
+    st.sidebar.markdown(f"### ✏️ Log Your Green Action")
     
-    # FIX: Activity selection must be outside the form to trigger a RERUN
+    # Activity selection must be outside the form to trigger a RERUN
     # and update the unit variable dynamically based on user interaction.
     activity = st.sidebar.selectbox("Select Activity", list(EMISSION_FACTORS.keys()), key="activity_select")
     unit = EMISSION_FACTORS[activity]["unit"]
@@ -129,21 +153,22 @@ def render_sidebar_form():
         role = st.selectbox("Your Role / Department", USER_ROLES)
         
         # Quantity input label now correctly uses the dynamically updated 'unit' variable
-        # The user's selection from 'activity' (made outside the form) persists.
         quantity = st.number_input(f"Quantity ({unit})", min_value=0.01, step=1.0) 
         
-        submitted = st.form_submit_button("Log Contribution")
+        submitted = st.form_submit_button("✅ Log Contribution")
 
         if submitted:
-            # Use the 'activity' variable calculated outside the form
             if not name or quantity <= 0:
                 st.error("Please ensure your Name is entered and Quantity is greater than zero.")
             else:
                 current_df = st.session_state['carbon_ledger']
-                # The 'activity' variable used here is the current value of the selectbox
                 st.session_state['carbon_ledger'] = add_entry(current_df, name, role, activity, quantity)
-                st.success(f"Contribution logged! {st.session_state['carbon_ledger'].iloc[-1]['Credits']:.2f} credits added.")
-                # st.rerun() is removed as Streamlit handles form submission reruns automatically
+                st.success(f"Contribution logged! {st.session_state['carbon_ledger'].iloc[-1]['Credits']:,.2f} credits added.")
+                st.rerun()
+
+    st.sidebar.markdown("---")
+    st.sidebar.button("🗑️ Reset All Data", on_click=reset_data)
+
 
 def render_informative_panel():
     """Renders the panel explaining Carbon Credits and Viksit Bharat alignment."""
@@ -176,9 +201,8 @@ def render_informative_panel():
 def render_emission_factors_table():
     """Renders a table showing the carbon credit factor for each activity."""
     st.markdown("---")
-    st.subheader("Emission Factors and Credit Value (Transparency)")
+    st.subheader("⚖️ Emission Factors and Credit Value (Transparency)")
     
-    # Prepare data for the factor table
     factor_data = []
     for activity, data in EMISSION_FACTORS.items():
         factor_data.append({
@@ -189,7 +213,7 @@ def render_emission_factors_table():
     
     factor_df = pd.DataFrame(factor_data)
     
-    with st.expander("View Carbon Credit Values per Unit"):
+    with st.expander("Click to View Carbon Credit Values per Unit"):
         st.dataframe(factor_df, hide_index=True, use_container_width=True)
         st.caption("1 Credit = 1 kg CO₂e Saved.")
         
@@ -204,114 +228,146 @@ def render_main_dashboard(df):
     total_credits = df["Credits"].sum()
     unique_users = df["Name"].nunique()
     
+    st.markdown("### 📊 Organizational Impact Metrics")
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        st.metric(label="Total CO₂ Saved (kg)", value=f"{total_co2_saved:,.2f} kg")
+        st.metric(label="Total CO₂ Saved (kg)", value=f"🌍 {total_co2_saved:,.2f} kg", delta="Collective Impact")
     with col2:
-        st.metric(label="Total Credits Generated", value=f"{total_credits:,.2f}")
+        st.metric(label="Total Credits Generated", value=f"⭐ {total_credits:,.2f}", delta="Rewards for Action")
     with col3:
-        st.metric(label="Average Credits per User", value=f"{total_credits / unique_users:,.2f}" if unique_users > 0 else "0.00")
+        st.metric(label="Participants", value=f"🧑‍🤝‍🧑 {unique_users}", delta="Unique Contributors")
 
-    # Informative panel added here
+    # Informative panel
     render_emission_factors_table()
 
-    # 4.2 Department (Role) Contribution Pie Chart
+    # 4.2 Top Charts Row (Leaderboard and Pie)
     st.markdown("---")
-    st.subheader("Role-wise CO₂ Savings Contribution")
-    role_contribution = df.groupby("Role")["CO2 Saved (kg)"].sum().reset_index()
-    role_contribution.columns = ["Role", "CO2 Saved (kg)"]
-    
-    fig_pie = px.pie(
-        role_contribution,
-        values="CO2 Saved (kg)",
-        names="Role",
-        title="Contribution Breakdown by Role/Department",
-        color_discrete_sequence=px.colors.sequential.Teal
-    )
-    st.plotly_chart(fig_pie, use_container_width=True)
+    col_l, col_p = st.columns([1, 1])
 
-    # 4.3 User Leaderboard
-    st.markdown("---")
-    st.subheader("Carbon Leaderboard (Top Contributors)")
-    user_leaderboard = df.groupby("Name")["Credits"].sum().reset_index().sort_values(by="Credits", ascending=False)
-    user_leaderboard["Rank"] = user_leaderboard["Credits"].rank(method="min", ascending=False).astype(int)
+    with col_l:
+        st.subheader("🥇 Carbon Leaderboard")
+        user_leaderboard = df.groupby("Name")["Credits"].sum().reset_index().sort_values(by="Credits", ascending=False).head(10)
+        user_leaderboard["Rank"] = user_leaderboard["Credits"].rank(method="min", ascending=False).astype(int)
 
-    top_contributor = user_leaderboard.iloc[0] if not user_leaderboard.empty else None
-    
-    if top_contributor is not None:
-        st.success(
-            f"🏆 **Current Green Champion:** {top_contributor['Name']} "
-            f"with {top_contributor['Credits']:,.2f} Credits!"
+        top_contributor = user_leaderboard.iloc[0] if not user_leaderboard.empty else None
+        
+        if top_contributor is not None:
+            st.success(
+                f"🏆 Current Green Champion: **{top_contributor['Name']}** "
+                f"({top_contributor['Credits']:,.2f} Credits)"
+            )
+
+        st.dataframe(user_leaderboard[['Rank', 'Name', 'Credits']], 
+                     use_container_width=True, 
+                     hide_index=True, 
+                     column_config={
+                         "Credits": st.column_config.NumberColumn(format="%.2f")
+                     })
+
+    with col_p:
+        st.subheader("🗂️ Contribution by Role")
+        role_contribution = df.groupby("Role")["CO2 Saved (kg)"].sum().reset_index()
+        role_contribution.columns = ["Role", "CO2 Saved (kg)"]
+        
+        fig_pie = px.pie(
+            role_contribution,
+            values="CO2 Saved (kg)",
+            names="Role",
+            title="Role-wise Contribution to Total CO₂ Savings",
+            hole=.3,
+            color_discrete_sequence=px.colors.sequential.Teal
         )
+        fig_pie.update_layout(showlegend=False)
+        st.plotly_chart(fig_pie, use_container_width=True)
 
-    st.dataframe(user_leaderboard, use_container_width=True, hide_index=True)
 
-    # 4.4 Activity Breakdown (Bar Chart)
+    # 4.3 Activity Charts Row
     st.markdown("---")
-    st.subheader("Contribution by Activity Type")
-    activity_breakdown = df.groupby("Activity")["Credits"].sum().reset_index().sort_values(by="Credits", ascending=False)
+    st.subheader("📉 Activity & Role Analysis")
+    col_bar, col_drilldown = st.columns(2)
     
-    fig_bar = px.bar(
-        activity_breakdown,
-        x="Credits",
-        y="Activity",
-        orientation="h",
-        title="Total Credits Generated per Activity",
-        color="Activity",
-        color_discrete_sequence=px.colors.sequential.Viridis
-    )
-    st.plotly_chart(fig_bar, use_container_width=True)
+    with col_bar:
+        # Top 5 Activity Impact (New Visualization)
+        st.markdown("#### Top 5 Most Impactful Activities")
+        activity_breakdown = df.groupby("Activity")["Credits"].sum().reset_index().sort_values(by="Credits", ascending=False).head(5)
+        
+        fig_bar = px.bar(
+            activity_breakdown,
+            x="Credits",
+            y="Activity",
+            orientation="h",
+            color="Activity",
+            color_discrete_sequence=px.colors.sequential.Viridis_r
+        )
+        fig_bar.update_layout(yaxis={'categoryorder':'total ascending'})
+        st.plotly_chart(fig_bar, use_container_width=True)
 
+    with col_drilldown:
+        # Activity Breakdown by Role (New Visualization)
+        st.markdown("#### Activity Effectiveness by Role")
+        role_activity_breakdown = df.groupby(["Role", "Activity"])["Credits"].sum().reset_index()
+        
+        fig_drilldown = px.bar(
+            role_activity_breakdown,
+            x="Role",
+            y="Credits",
+            color="Activity",
+            title="Credits by Role and Activity",
+            color_discrete_sequence=px.colors.qualitative.Pastel
+        )
+        st.plotly_chart(fig_drilldown, use_container_width=True)
 
-    # 4.5 Mock Timeline (Line Chart)
-    # Note: Since there is no actual timestamp, we mock a timeline using entry count
+    # 4.4 Cumulative Timeline
     st.markdown("---")
-    st.subheader("Organizational Progress (Cumulative Credits)")
+    st.subheader("📈 Organizational Progress Timeline")
     
     df_timeline = df.copy()
-    df_timeline['Entry Index'] = df_timeline.index + 1
-    df_timeline['Cumulative Credits'] = df_timeline['Credits'].cumsum()
+    df_timeline['Date'] = df_timeline['Timestamp'].dt.date
+    df_timeline_grouped = df_timeline.groupby('Date')['Credits'].sum().cumsum().reset_index()
+    df_timeline_grouped.columns = ['Date', 'Cumulative Credits']
 
     fig_line = px.line(
-        df_timeline,
-        x='Entry Index',
+        df_timeline_grouped,
+        x='Date',
         y='Cumulative Credits',
         markers=True,
         title='Cumulative Carbon Credits Over Time',
-        labels={'Entry Index': 'Entry Count (Mock Time)', 'Cumulative Credits': 'Total Credits'},
-        line_shape='linear'
+        labels={'Date': 'Date', 'Cumulative Credits': 'Total Credits'},
+        line_shape='spline',
+        color_discrete_sequence=['#4CAF50']
     )
     st.plotly_chart(fig_line, use_container_width=True)
+
 
 def render_report_export(df):
     """Renders the export functionality and summary message."""
     st.markdown("---")
-    st.subheader("Report Generation")
+    st.subheader("⬇️ Report Generation")
     
     # Export full organizational dataset to CSV
     csv_data = df.to_csv(index=False).encode('utf-8')
     st.download_button(
         label="Download Full Organizational Report (.csv)",
         data=csv_data,
-        file_name=f"{ORG_NAME}_CarbonCollective_Report.csv",
+        file_name=f"{ORG_NAME}_CarbonCollective_Report_{datetime.now().strftime('%Y%m%d')}.csv",
         mime="text/csv",
         key='download_csv'
     )
 
-    # Summary Message
+    # Summary Message with custom styling
     total_co2_saved = df["CO2 Saved (kg)"].sum()
     st.markdown(
         f"""
-        <div style="padding: 15px; border-radius: 10px; background-color: #e0f2f1; text-align: center;">
-            <h4 style="color: #004d40;">
+        <div style="padding: 20px; border-radius: 12px; background-color: #e8f5e9; border: 2px solid #4CAF50;">
+            <h4 style="color: #1b5e20; text-align: center; margin-bottom: 5px;">
                 **Viksit Bharat 2047 Pledge:**
             </h4>
-            <h2 style="color: #00796b; margin-top: 0;">
+            <h1 style="color: #2e7d32; text-align: center; margin-top: 0; margin-bottom: 5px;">
                 Together, we have saved **{total_co2_saved:,.2f} kg CO₂e**!
-            </h2>
-            <p style="color: #333;">
-                This demonstrates {ORG_NAME}'s commitment to data-driven green growth.
+            </h1>
+            <p style="color: #333; text-align: center; font-size: 1.1em;">
+                This demonstrates {ORG_NAME}'s commitment to data-driven green growth and sustainability leadership.
             </p>
         </div>
         """,
