@@ -6,6 +6,7 @@ import random
 import json
 import asyncio
 from datetime import datetime, timedelta
+import requests # <-- ADDED REQUESTS LIBRARY
 
 # --- 1. Configuration: School Branding, Emission Factors, and Data Schema ---
 
@@ -125,15 +126,18 @@ def reset_data_callback():
 
 # --- 3. Gemini AI Integration ---
 
-async def generate_personalized_tip(user_role, all_activities, current_df):
+def generate_personalized_tip(user_role, all_activities, current_df): # Removed 'async' and 'await'
     """
     Calls the Gemini API to generate personalized sustainability advice.
-    Uses asynchronous fetch to avoid blocking the Streamlit UI.
+    Uses synchronous requests.post for Streamlit Community Cloud deployment.
     """
     if not API_KEY:
         return "⚠️ Gemini API key not found in Streamlit secrets. Cannot generate suggestions."
 
     # Analyze top activity for context
+    if current_df.empty:
+        return "Log some data first to get personalized tips!"
+        
     top_activity = current_df.groupby('Activity')['Credits Generated'].sum().idxmax()
     total_credits = current_df['Credits Generated'].sum()
 
@@ -159,30 +163,34 @@ async def generate_personalized_tip(user_role, all_activities, current_df):
     max_retries = 3
     for attempt in range(max_retries):
         try:
-            # Append API key for authentication
+            # Append API key to URL for authentication
             url = f"{GEMINI_API_URL}?key={API_KEY}"
             
-            # Use window.fetch (provided by the environment) for the asynchronous call
-            response = await st.runtime.scriptrunner.fetch(
+            # Use requests.post for synchronous HTTP calls
+            response = requests.post(
                 url, 
-                method='POST',
                 headers={'Content-Type': 'application/json'},
-                body=json.dumps(payload)
+                data=json.dumps(payload)
             )
 
             # Check for HTTP errors
-            if response.status != 200:
-                raise Exception(f"API returned status {response.status}: {await response.text()}")
+            response.raise_for_status() # Raises an exception for 4xx or 5xx status codes
 
-            result = await response.json()
+            result = response.json()
             
             # Extract text from the complex Gemini response structure
             text = result.get('candidates', [{}])[0].get('content', {}).get('parts', [{}])[0].get('text', 'No suggestion generated.')
             return text
 
-        except Exception as e:
+        except requests.exceptions.RequestException as e:
             if attempt < max_retries - 1:
-                await asyncio.sleep(2 ** attempt) # Exponential backoff
+                st.warning(f"API call failed, retrying in {2 ** attempt} seconds...")
+                # We can't use 'asyncio.sleep' inside a sync function, so we use time.sleep 
+                # or a simple Streamlit workaround, but for simplicity here, we rely on the loop
+                # and assume the Streamlit thread handles the wait or just fails fast. 
+                # Given this is a simple prototype, we rely on the retry loop for resilience.
+                import time
+                time.sleep(2 ** attempt)
             else:
                 return f"⚠️ Error: Failed to generate tip after multiple retries. Details: {e}"
 
@@ -321,8 +329,8 @@ def render_main_dashboard():
             random_role = random.choice(USER_ROLES) 
             
             with st.spinner("Eco-Coach is thinking..."):
-                # Run the async function using a standard sync wrapper pattern for Streamlit
-                result = asyncio.run(generate_personalized_tip(random_role, list(EMISSION_FACTORS.keys()), df))
+                # Run the synchronous function directly
+                result = generate_personalized_tip(random_role, list(EMISSION_FACTORS.keys()), df)
                 
                 # Store the result in session state to persist it during the rerun
                 st.session_state.ai_suggestion = result
